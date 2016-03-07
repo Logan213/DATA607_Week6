@@ -1,0 +1,103 @@
+---
+title: "Week 6 Assignment"
+author: "Logan Thomson"
+date: "March 5, 2016"
+output: html_document
+---
+
+###Load Libraries  
+I used `dplyr` and `tidyr` since they are required for this assignment, and `ggplot2` to create a basic bar plot summarising the flight delay information.  
+
+```{r, message=FALSE}
+require(dplyr)
+require(tidyr)
+require(ggplot2)
+```
+
+###Reading Data into R  
+
+For this assignment, I simply created a .csv file that looked identical to the given chart in the assignment description, nested rows, blank cells and all. The file is hosted in my GitHub repository, so we'll just do a simple connection, read the data, and then set that to an object called `delays`.  Note that I set the header variable to true, so that the given cities are the column headers (the first two columns will be blank).  
+
+```{r}
+# open file
+path <- ("https://raw.githubusercontent.com/Logan213/DATA607_Week6/master/airlinedly.csv")
+con <- file(path, open="r")
+delays <- read.csv(con, header = TRUE, stringsAsFactors = FALSE)
+
+# close file
+close(con)
+
+delays
+```
+
+###Reshaping the Data  
+
+I played around with `tidyr` and `dplyr` for quite a bit, hoping to somehow rotate and fill in the blank cells I created.  In the end, I set the names for my two blank column headers, dropped the empty row using `slice`, and then filled in the empty Airline "cells" with the appropriate names using a simple assignment.  
+
+```{r}
+# name empty column headers
+names(delays)[1:2] <- c("Airline", "Status")
+
+# drop empty row
+delays <- slice(delays, -3)
+delays[2,1] <- "Alaska"
+delays[4,1] <- "AM West"
+
+delays
+```
+
+Below is the "piped" R code I used to reshape the data frame from wide to long format. I wanted each airline, city and flight count to be it's own row. I then used `mutate` to add a Total Flights column, and then again to get a percent of delayed flights.
+
+```{r}
+delays <- delays %>% 
+  gather(City, Flights, LA:Seattle) %>%
+  arrange(Airline, Status) %>%
+  spread(Status, Flights) %>%
+  mutate(Tot_Flights = Delayed + `On Time`) %>%
+  mutate(Pct_Delayed = Tot_Flights / Delayed)
+
+# sort by City to easily compare % of flights delayed
+arrange(delays, City)
+```
+
+###Comparing Alaska and AM West  
+
+To get a total of the three columns containing the number of flights, I filtered by airline, and then used `summarise_each`. I did not include the `Pct_Delayed` that I created previously, because summing this would not calculate the correct % of delayed flights for that airline. Instead, I summarised first, and then simply added a new column using `mutate` again.
+
+```{r}
+# total flights and % delayed for Alaska
+delays %>%
+  filter(Airline == "Alaska") %>%
+  select(Delayed:Tot_Flights) %>%
+  summarise_each(funs(sum)) %>%
+  mutate(Pct_Delayed_All = Delayed / Tot_Flights)
+```
+
+```{r}
+# total flights and % delayed for AM West
+delays %>%
+  filter(Airline == "AM West") %>%
+  select(Delayed:Tot_Flights) %>%
+  summarise_each(funs(sum)) %>%
+  mutate(Pct_Delayed_All = Delayed / Tot_Flights)
+```
+
+Upon first glance of the data, it looks like Alaska Airlines has a much better performance, as three of the five destination cities have less than 100 delayed flights. However, when we look at the overall performance for the airlines, we can see that AM West, despite having 400+ delayed flights in Phoenix, is actually the more efficient carrier. AM West has more delays, but also conducts more flights, with a lower ratio of delayed flights than Alaska.  
+
+###Plotting by City  
+
+Just to get a visual, let's plot the data in the transformed `delays` data frame. The following will create a plot that separates the data by airline, color codes it by city, and shows the percent of flights delayed by bar height.
+
+```{r}
+ggplot(data=delays, aes(Airline, Pct_Delayed, fill=City)) + geom_bar(stat="identity", position="dodge") + scale_fill_brewer()
+```
+
+I looks like if we were going to choose an Airline to fly to a West Coast destination, AM West would be the better bet to get you there on time across the board.  
+
+###Summarize Delayed Flights by Airline  
+
+Lastly, we can get a quick side-by-side comparison of the average delayed flight percentage for each airline by using the `summarise` function, grouping by airline, and calculating the mean percent of delayed flights. Note, this is not the same as the above where all flights are summed and the delays are divided by the total, rather the average % of flights delayed across the five destinations. 
+
+```{r}
+summarise(group_by(delays, Airline), mean(Pct_Delayed))
+```
